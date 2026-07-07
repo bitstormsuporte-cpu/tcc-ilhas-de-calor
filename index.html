@@ -84,6 +84,19 @@
 
             <hr style="border: 0; border-top: 1px solid #eee; margin: 10px 0;">
 
+            <div class="card" style="border-left-color: #7f8c8d;">
+                <h3 style="font-size: 0.85rem;">📚 Base Científica dos Coeficientes</h3>
+                <p style="font-size: 0.75rem; color: #666; margin: 4px 0;">Coeficientes de Efeito de Ilha de Calor calibrados com base em:</p>
+                <ul style="font-size: 0.72rem; color: #666; margin: 4px 0; padding-left: 18px;">
+                    <li>Araújo, Silva &amp; Machado (2016) — sensoriamento remoto (Landsat 5/8)</li>
+                    <li>Bezerra (2013) — Tese UFCG, conforto térmico no semiárido</li>
+                    <li>Diagnóstico Microclimático de Campina Grande — Anais CIC-UFCG (termohigrômetros de campo)</li>
+                    <li>Machado et al. (2025) — Modelagem espacial das ICU em Campina Grande</li>
+                </ul>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 10px 0;">
+
             <div class="add-form">
                 <strong style="font-size: 0.9rem;">+ Adicionar novo bairro/ponto</strong>
                 <input type="text" id="new-name" placeholder="Nome do bairro (ex: Bodocongó)">
@@ -116,13 +129,97 @@
         // - coords: [lat, lon] usado tanto para o marcador quanto para a consulta de clima
         // - islandEffect: coeficiente FIXO da ilha de calor (dado do estudo, não vem de API)
         // - baseTemp: valor de fallback caso a API esteja indisponível
+        // - desc: contextualização científica, com base em literatura sobre ICU em Campina Grande
+        //
+        // Fontes utilizadas na calibração dos coeficientes (ver referências completas no TCC):
+        // ARAÚJO, SILVA & MACHADO (2016) - Identificação de Ilhas de Calor em Campina Grande-PB (sensoriamento remoto, Landsat 5/8)
+        // BEZERRA (2013) - Caracterização de ilhas de calor e conforto térmico em áreas urbanas do semiárido, UFCG
+        // Diagnóstico Microclimático de Campina Grande - Anais CIC-UFCG (termohigrômetros de campo)
+        // MACHADO et al. (2025) - Modelagem Espacial das Ilhas de Calor Urbano em Campina Grande
         const locations = {
             cg_centro: {
-                name: "Centro de Campina Grande (Área Crítica)",
+                name: "Centro de Campina Grande (Núcleo Histórico de ICU)",
                 coords: [-7.2241, -35.8819],
                 baseTemp: 29.5,
                 islandEffect: 3.8,
-                desc: "Zona de alta retenção térmica (efeito canhão urbano) e alta densidade de veículos."
+                desc: "Núcleo histórico da ilha de calor até os anos 2000: alta verticalização (canhão urbano), alta retenção térmica pelo asfalto e baixa vegetação."
+            },
+            sao_jose: {
+                name: "São José",
+                coords: [-7.2264, -35.8921],
+                baseTemp: 29.2,
+                islandEffect: 3.0,
+                desc: "Bairro do núcleo histórico de ICU identificado até os anos 2000, adjacente ao Centro."
+            },
+            prata: {
+                name: "Prata",
+                coords: [-7.2194, -35.8948],
+                baseTemp: 29.1,
+                islandEffect: 3.0,
+                desc: "Bairro do núcleo histórico de ICU, com ocupação consolidada e baixa cobertura vegetal remanescente."
+            },
+            jose_pinheiro: {
+                name: "José Pinheiro",
+                coords: [-7.2261, -35.8703],
+                baseTemp: 29.0,
+                islandEffect: 2.9,
+                desc: "Bairro do núcleo histórico de ICU, densamente ocupado desde o antigo comércio algodoeiro."
+            },
+            catole: {
+                name: "Catolé",
+                coords: [-7.2138, -35.9106],
+                baseTemp: 29.2,
+                islandEffect: 3.2,
+                desc: "Bairro comercial denso do núcleo histórico de ICU, tráfego intenso e alta impermeabilização do solo."
+            },
+            bodocongo: {
+                name: "Bodocongó",
+                coords: [-7.2312, -35.9012],
+                baseTemp: 29.0,
+                islandEffect: 2.6,
+                desc: "Bairro misto residencial/comercial, verticalização moderada, presença parcial de áreas verdes (açude de Bodocongó — área de amenidade térmica)."
+            },
+            serrotao: {
+                name: "Serrotão (Zona de Expansão)",
+                coords: [-7.2140, -35.9424],
+                baseTemp: 29.3,
+                islandEffect: 3.6,
+                desc: "Área de expansão recente (Zona Oeste): solo exposto em loteamentos novos é preditor importante de temperaturas de superfície elevadas."
+            },
+            malvinas: {
+                name: "Malvinas (Zona de Expansão)",
+                coords: [-7.2305, -35.9343],
+                baseTemp: 29.2,
+                islandEffect: 3.5,
+                desc: "Bairro populoso em zona de expansão recente das ilhas de calor (Zona Sudoeste), com perda acelerada de vegetação nativa."
+            },
+            tres_irmas: {
+                name: "Três Irmãs (Zona de Expansão)",
+                coords: [-7.2600, -35.9315],
+                baseTemp: 29.3,
+                islandEffect: 3.6,
+                desc: "Área de novos loteamentos na Zona Sul, apontada como região de deslocamento e expansão recente das ICU."
+            },
+            bairro_cidades: {
+                name: "Bairro das Cidades (Zona de Expansão)",
+                coords: [-7.2729, -35.9276],
+                baseTemp: 29.4,
+                islandEffect: 3.8,
+                desc: "Bairro populoso de expansão recente, extremo Sul/Oeste, com solo exposto e infraestrutura viária em consolidação."
+            },
+            velame: {
+                name: "Velame (Zona de Expansão)",
+                coords: [-7.2800, -35.9098],
+                baseTemp: 29.3,
+                islandEffect: 3.6,
+                desc: "Localidade de expansão recente das ICU, extremo Sul do município."
+            },
+            alto_branco: {
+                name: "Alto Branco (Ilha de Frescor - Zona Norte)",
+                coords: [-7.2039, -35.8798],
+                baseTemp: 27.8,
+                islandEffect: 0.5,
+                desc: "Zona Norte identificada como \"ilha de frescor\": maior presença de vegetação e altitude mais elevada reduzem a retenção térmica."
             },
             massaranduba: {
                 name: "Massaranduba - Centro",
@@ -130,20 +227,6 @@
                 baseTemp: 28.0,
                 islandEffect: 0.8,
                 desc: "Zona periférica/rural com boa dissipação de calor e menor retenção no pavimento."
-            },
-            bodocongo: {
-                name: "Bodocongó (Campina Grande)",
-                coords: [-7.2312, -35.9012],
-                baseTemp: 29.0,
-                islandEffect: 2.6,
-                desc: "Bairro misto residencial/comercial, verticalização moderada, presença parcial de áreas verdes (açude de Bodocongó)."
-            },
-            catole: {
-                name: "Catolé (Campina Grande)",
-                coords: [-7.2138, -35.9106],
-                baseTemp: 29.2,
-                islandEffect: 3.2,
-                desc: "Bairro comercial denso, tráfego intenso, alta impermeabilização do solo."
             }
         };
 
@@ -189,6 +272,10 @@
 
         Object.keys(locations).forEach(key => createMarker(key, locations[key]));
         loadApiKey(); // tenta recuperar a chave salva anteriormente neste navegador
+
+        // Ajusta o zoom/centro do mapa automaticamente para enquadrar todos os pontos cadastrados
+        const allCoords = Object.values(locations).map(loc => loc.coords);
+        map.fitBounds(allCoords, { padding: [30, 30] });
 
         async function fetchAmbientTemp(lat, lon) {
             const manualKey = document.getElementById('owm-key').value.trim();
