@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EcoTrânsito - Ilhas de Calor & Estresse Urbano</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root { --primary: #2c3e50; --bg: #f4f6f7; --card-bg: #ffffff; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: var(--bg); color: #333; display: flex; flex-direction: column; height: 100vh; }
+        header { background-color: var(--primary); color: white; padding: 15px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        header h1 { margin: 0; font-size: 1.4rem; }
+        header p { margin: 5px 0 0 0; font-size: 0.9rem; opacity: 0.8; }
+        .container { display: flex; flex: 1; overflow: hidden; }
+        #map { flex: 1; height: 100%; }
+        .panel { width: 380px; background: var(--card-bg); box-shadow: -2px 0 10px rgba(0,0,0,0.1); padding: 20px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; z-index: 1000; }
+        .card { background: #f8f9fa; border-left: 5px solid #bdc3c7; padding: 15px; border-radius: 4px; }
+        .card.danger { border-left-color: #e74c3c; }
+        .card.warning { border-left-color: #f39c12; }
+        .card.success { border-left-color: #2ecc71; }
+        .card h3 { margin: 0 0 8px 0; font-size: 1rem; color: var(--primary); }
+        .metric { font-size: 1.8rem; font-weight: bold; margin: 5px 0; }
+        label { font-weight: bold; font-size: 0.9rem; }
+        select, input { width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ccc; margin-top: 5px; box-sizing: border-box; font-family: inherit; }
+        .progress-bar { background: #e0e0e0; border-radius: 10px; height: 15px; width: 100%; overflow: hidden; margin-top: 5px; }
+        .progress-fill { height: 100%; width: 0%; transition: width 0.5s ease, background-color 0.5s ease; }
+        .add-form { display: flex; flex-direction: column; gap: 8px; background: #f8f9fa; padding: 12px; border-radius: 4px; border: 1px dashed #bdc3c7; }
+        .add-form button { background: var(--primary); color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .add-form button:hover { opacity: 0.9; }
+        .row2 { display: flex; gap: 8px; }
+        .row2 > div { flex: 1; }
+        .badge { display: inline-block; font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; background: #eee; margin-left: 6px; }
+        .badge.live { background: #d4efdf; color: #1e8449; }
+        .badge.offline { background: #fdebd0; color: #935116; }
+        small.helper { color: #888; font-size: 0.75rem; }
+        @media (max-width: 768px) { .container { flex-direction: column; } .panel { width: auto; height: 45%; } #map { height: 55%; } }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>EcoTrânsito: Monitor de Microclima e Irritabilidade</h1>
+        <p>Estudo de Caso: Campina Grande e Massaranduba - PB (Protótipo Didático)</p>
+    </header>
+    <div class="container">
+        <div id="map"></div>
+        <div class="panel">
+            <h2>Análise de Impacto</h2>
+            <p style="font-size: 0.85rem; color: #666;">Selecione um ponto no mapa e altere o nível do tráfego para simular o estresse biometeorológico.</p>
+
+            <details id="key-setup" style="font-size: 0.85rem;">
+                <summary style="cursor: pointer; font-weight: bold; color: var(--primary);">⚙️ Opção avançada: usar outra chave de API</summary>
+                <div style="margin-top: 8px;">
+                    <label for="owm-key">Chave da API OpenWeatherMap (opcional):</label>
+                    <input type="text" id="owm-key" placeholder="Deixe em branco para usar a chave padrão do app" oninput="saveApiKey()">
+                    <small class="helper" id="key-status">O app já vem com uma chave configurada e funciona sozinho em qualquer computador. Só preencha aqui se quiser usar sua própria chave pessoal.</small>
+                </div>
+            </details>
+
+            <div>
+                <label for="traffic">Condição do Trânsito Local:</label>
+                <select id="traffic" onchange="updateCalculations()">
+                    <option value="1">Fluido (Sem retenção)</option>
+                    <option value="1.3">Moderado (Horário de pico leve)</option>
+                    <option value="1.7">Intenso (Trânsito parado / Congestionamento)</option>
+                </select>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 10px 0;">
+
+            <div class="card success" id="temp-card">
+                <h3>Temperatura Estimada no Asfalto <span id="live-badge"></span></h3>
+                <div class="metric" id="display-temp">-- °C</div>
+                <span id="display-microclimate" style="font-size: 0.85rem; color: #555;">Clique em um marcador no mapa</span>
+            </div>
+
+            <div class="card" id="stress-card">
+                <h3>Índice de Irritabilidade do Motorista</h3>
+                <div class="metric" id="display-stress">-- %</div>
+                <div class="progress-bar">
+                    <div id="stress-bar" class="progress-fill"></div>
+                </div>
+                <p id="display-behavior" style="font-size: 0.85rem; margin: 8px 0 0 0; font-weight: 500;"></p>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 10px 0;">
+
+            <div class="add-form">
+                <strong style="font-size: 0.9rem;">+ Adicionar novo bairro/ponto</strong>
+                <input type="text" id="new-name" placeholder="Nome do bairro (ex: Bodocongó)">
+                <div class="row2">
+                    <div><input type="text" id="new-lat" placeholder="Latitude (ex: -7.2312)"></div>
+                    <div><input type="text" id="new-lon" placeholder="Longitude (ex: -35.9012)"></div>
+                </div>
+                <div>
+                    <label style="font-weight:normal; font-size:0.85rem;">Efeito de Ilha de Calor (°C): <span id="island-val">2.0</span></label>
+                    <input type="range" id="new-island" min="0" max="5" step="0.1" value="2.0" oninput="document.getElementById('island-val').innerText = this.value">
+                </div>
+                <input type="text" id="new-desc" placeholder="Descrição curta da área">
+                <button onclick="addNewLocation()">Adicionar ao mapa</button>
+                <small class="helper">O efeito de ilha de calor é um coeficiente do seu estudo de campo (não vem de API) — ajuste com base na sua metodologia (verticalização, cobertura vegetal, tipo de pavimento).</small>
+            </div>
+        </div>
+    </div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // ⚠️ IMPORTANTE: esta é a chave gratuita da OpenWeatherMap do projeto.
+        // Lembre-se: como o app é 100% frontend (GitHub Pages), esta chave fica
+        // visível para quem olhar o código-fonte do repositório — combinado
+        // anteriormente que isso é aceitável para uma chave gratuita de uso acadêmico.
+        const DEFAULT_OWM_KEY = "8a48b0cc9db7b67c7888aceb1f300e70";
+
+        const map = L.map('map').setView([-7.21, -35.85], 11);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' }).addTo(map);
+
+        // Banco de dados de locais. Cada local guarda:
+        // - coords: [lat, lon] usado tanto para o marcador quanto para a consulta de clima
+        // - islandEffect: coeficiente FIXO da ilha de calor (dado do estudo, não vem de API)
+        // - baseTemp: valor de fallback caso a API esteja indisponível
+        const locations = {
+            cg_centro: {
+                name: "Centro de Campina Grande (Área Crítica)",
+                coords: [-7.2241, -35.8819],
+                baseTemp: 29.5,
+                islandEffect: 3.8,
+                desc: "Zona de alta retenção térmica (efeito canhão urbano) e alta densidade de veículos."
+            },
+            massaranduba: {
+                name: "Massaranduba - Centro",
+                coords: [-7.1952, -35.7891],
+                baseTemp: 28.0,
+                islandEffect: 0.8,
+                desc: "Zona periférica/rural com boa dissipação de calor e menor retenção no pavimento."
+            },
+            bodocongo: {
+                name: "Bodocongó (Campina Grande)",
+                coords: [-7.2312, -35.9012],
+                baseTemp: 29.0,
+                islandEffect: 2.6,
+                desc: "Bairro misto residencial/comercial, verticalização moderada, presença parcial de áreas verdes (açude de Bodocongó)."
+            },
+            catole: {
+                name: "Catolé (Campina Grande)",
+                coords: [-7.2138, -35.9106],
+                baseTemp: 29.2,
+                islandEffect: 3.2,
+                desc: "Bairro comercial denso, tráfego intenso, alta impermeabilização do solo."
+            }
+        };
+
+        const markers = {};
+        let activeLocation = null;
+        let activeKey = null;
+
+        // --- Persistência da chave de API no navegador (localStorage) ---
+        function saveApiKey() {
+            const key = document.getElementById('owm-key').value.trim();
+            const status = document.getElementById('key-status');
+            if (key) {
+                try {
+                    localStorage.setItem('ecotransito_owm_key', key);
+                    status.innerHTML = '✅ Chave salva neste navegador. Não será preciso colar de novo.';
+                    status.style.color = '#27ae60';
+                } catch (e) {
+                    status.innerHTML = 'Não foi possível salvar a chave neste navegador, mas ela ainda funciona nesta sessão.';
+                }
+            }
+        }
+
+        function loadApiKey() {
+            try {
+                const saved = localStorage.getItem('ecotransito_owm_key');
+                if (saved) {
+                    document.getElementById('owm-key').value = saved;
+                    document.getElementById('key-status').innerHTML = '✅ Chave carregada automaticamente deste navegador.';
+                    document.getElementById('key-status').style.color = '#27ae60';
+                }
+            } catch (e) {
+                // localStorage indisponível (ex.: pré-visualização em ambiente restrito) — segue sem travar o app
+                console.warn("Não foi possível acessar localStorage:", e.message);
+            }
+        }
+
+        function createMarker(key, loc) {
+            const marker = L.marker(loc.coords).addTo(map)
+                .bindPopup(`<b>${loc.name}</b><br>Efeito Ilha: +${loc.islandEffect}°C<br>Clique para analisar.`);
+            marker.on('click', () => selectLocation(key));
+            markers[key] = marker;
+        }
+
+        Object.keys(locations).forEach(key => createMarker(key, locations[key]));
+        loadApiKey(); // tenta recuperar a chave salva anteriormente neste navegador
+
+        async function fetchAmbientTemp(lat, lon) {
+            const manualKey = document.getElementById('owm-key').value.trim();
+            const apiKey = manualKey || DEFAULT_OWM_KEY;
+            if (!apiKey || apiKey === "COLOQUE_SUA_CHAVE_AQUI") throw new Error("Nenhuma chave de API configurada");
+
+            const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&appid=${apiKey}`;
+
+            // Timeout de segurança: se a API demorar mais de 6s (rede instável, sem sinal), cai no modo offline
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 6000);
+
+            try {
+                const res = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeout);
+                if (!res.ok) {
+                    if (res.status === 401) throw new Error("Chave de API inválida ou ainda não ativada (pode levar até 2h após criação)");
+                    throw new Error("Falha na consulta à OpenWeatherMap (status " + res.status + ")");
+                }
+                const data = await res.json();
+                return data.main.temp;
+            } catch (e) {
+                clearTimeout(timeout);
+                throw e;
+            }
+        }
+
+        async function selectLocation(key) {
+            activeKey = key;
+            activeLocation = locations[key];
+            const badge = document.getElementById('live-badge');
+            document.getElementById('display-temp').innerText = "Consultando clima...";
+            badge.innerHTML = "";
+
+            try {
+                const tAmb = await fetchAmbientTemp(activeLocation.coords[0], activeLocation.coords[1]);
+                activeLocation.currentAmbientTemp = tAmb;
+                badge.innerHTML = '<span class="badge live">clima em tempo real</span>';
+            } catch (e) {
+                console.warn(e.message);
+                activeLocation.currentAmbientTemp = activeLocation.baseTemp;
+                badge.innerHTML = '<span class="badge offline">valor de referência (offline)</span>';
+            }
+            updateCalculations();
+        }
+
+        function updateCalculations() {
+            if (!activeLocation) return;
+            const trafficFactor = parseFloat(document.getElementById('traffic').value);
+            const tAmb = activeLocation.currentAmbientTemp ?? activeLocation.baseTemp;
+            const finalTemp = tAmb + activeLocation.islandEffect;
+            let stressBase = (finalTemp - 25) * 8;
+            let finalStress = Math.min(Math.max(Math.round(stressBase * trafficFactor), 10), 100);
+
+            document.getElementById('display-temp').innerText = `${finalTemp.toFixed(1)} °C`;
+            document.getElementById('display-microclimate').innerText = `${activeLocation.name}. ${activeLocation.desc} (Efeito Ilha: +${activeLocation.islandEffect}°C)`;
+            document.getElementById('display-stress').innerText = `${finalStress}%`;
+
+            const stressBar = document.getElementById('stress-bar');
+            const stressCard = document.getElementById('stress-card');
+            const tempCard = document.getElementById('temp-card');
+            const behaviorText = document.getElementById('display-behavior');
+
+            stressBar.style.width = `${finalStress}%`;
+            stressCard.className = "card";
+            tempCard.className = "card";
+
+            if (finalStress < 45) {
+                stressBar.style.backgroundColor = "#2ecc71";
+                stressCard.classList.add("success");
+                behaviorText.innerText = "Motorista Calmo: Conforto térmico aceitável. Respostas e reflexos normais frente às adversidades do tráfego.";
+                behaviorText.style.color = "#27ae60";
+            } else if (finalStress >= 45 && finalStress < 75) {
+                stressBar.style.backgroundColor = "#f39c12";
+                stressCard.classList.add("warning");
+                behaviorText.innerText = "Motorista Incomodado: Fadiga térmica inicial. Propensão a pequenos atos de impaciência (buzinas excessivas, reclamações).";
+                behaviorText.style.color = "#d35400";
+            } else {
+                stressBar.style.backgroundColor = "#e74c3c";
+                stressCard.classList.add("danger");
+                tempCard.className = "card danger";
+                behaviorText.innerText = "ALERTA CRÍTICO: Irritabilidade extrema. Alta propensão a condutas agressivas, discussões e perda de reflexos defensivos devido ao calor sufocante e confinamento.";
+                behaviorText.style.color = "#c0392b";
+            }
+        }
+
+        function addNewLocation() {
+            const name = document.getElementById('new-name').value.trim();
+            const lat = parseFloat(document.getElementById('new-lat').value);
+            const lon = parseFloat(document.getElementById('new-lon').value);
+            const island = parseFloat(document.getElementById('new-island').value);
+            const desc = document.getElementById('new-desc').value.trim() || "Ponto adicionado pelo usuário.";
+
+            if (!name || isNaN(lat) || isNaN(lon)) {
+                alert("Preencha nome, latitude e longitude corretamente.");
+                return;
+            }
+
+            const key = "custom_" + Date.now();
+            locations[key] = {
+                name: name,
+                coords: [lat, lon],
+                baseTemp: 28.5,
+                islandEffect: island,
+                desc: desc
+            };
+            createMarker(key, locations[key]);
+            map.panTo([lat, lon]);
+
+            document.getElementById('new-name').value = "";
+            document.getElementById('new-lat').value = "";
+            document.getElementById('new-lon').value = "";
+            document.getElementById('new-desc').value = "";
+
+            selectLocation(key);
+        }
+    </script>
+</body>
+</html>
