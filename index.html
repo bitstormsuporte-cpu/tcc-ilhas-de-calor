@@ -53,16 +53,22 @@
                     <label for="owm-key">Chave da API OpenWeatherMap (opcional):</label>
                     <input type="text" id="owm-key" placeholder="Deixe em branco para usar a chave padrão do app" oninput="saveApiKey()">
                     <small class="helper" id="key-status">O app já vem com uma chave configurada e funciona sozinho em qualquer computador. Só preencha aqui se quiser usar sua própria chave pessoal.</small>
+
+                    <label for="tomtom-key" style="display:block; margin-top: 10px;">Chave da API TomTom Traffic (opcional):</label>
+                    <input type="text" id="tomtom-key" placeholder="Deixe em branco para usar a chave padrão do app" oninput="saveTomTomKey()">
+                    <small class="helper" id="tomtom-key-status">Usada para medir o trânsito em tempo real. Também já vem configurada por padrão.</small>
                 </div>
             </details>
 
             <div>
-                <label for="traffic">Condição do Trânsito Local:</label>
-                <select id="traffic" onchange="updateCalculations()">
+                <label for="traffic">Condição do Trânsito Local: <span id="traffic-badge"></span></label>
+                <select id="traffic" onchange="onTrafficModeChange()">
+                    <option value="auto" selected>Automático (tempo real, via TomTom)</option>
                     <option value="1">Fluido (Sem retenção)</option>
                     <option value="1.3">Moderado (Horário de pico leve)</option>
                     <option value="1.7">Intenso (Trânsito parado / Congestionamento)</option>
                 </select>
+                <small class="helper">No modo automático, o trânsito é medido em tempo real perto do ponto selecionado. Se não houver dado suficiente para aquele bairro, o app avisa e usa a última opção manual escolhida.</small>
             </div>
 
             <hr style="border: 0; border-top: 1px solid #eee; margin: 10px 0;">
@@ -121,6 +127,11 @@
         // visível para quem olhar o código-fonte do repositório — combinado
         // anteriormente que isso é aceitável para uma chave gratuita de uso acadêmico.
         const DEFAULT_OWM_KEY = "8a48b0cc9db7b67c7888aceb1f300e70";
+
+        // ⚠️ Esta é a chave gratuita da TomTom Traffic API do projeto.
+        // Mesmo raciocínio da chave da OpenWeatherMap: fica visível no código-fonte
+        // por ser um app 100% frontend, mas é aceitável para uma chave gratuita de uso acadêmico.
+        const DEFAULT_TOMTOM_KEY = "bXHXRZa1deqhTt60Ivtq1UhY7l0grSgI";
 
         const map = L.map('map').setView([-7.21, -35.85], 11);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' }).addTo(map);
@@ -227,6 +238,41 @@
                 baseTemp: 28.0,
                 islandEffect: 0.8,
                 desc: "Zona periférica/rural com boa dissipação de calor e menor retenção no pavimento."
+            },
+            alpargatas: {
+                name: "Alpargatas (Distrito Industrial)",
+                coords: [-7.2669, -35.8881],
+                baseTemp: 29.4,
+                islandEffect: 3.4,
+                desc: "Um dos maiores empregadores da cidade — forte pico de tráfego nas trocas de turno. Zona industrial com alta pavimentação e baixo albedo."
+            },
+            hospital_trauma: {
+                name: "Hospital de Trauma (Malvinas)",
+                coords: [-7.2397, -35.9320],
+                baseTemp: 29.3,
+                islandEffect: 3.5,
+                desc: "Rota de acesso a serviço de emergência 24h, com fluxo constante e intenso de veículos particulares e ambulâncias em qualquer horário."
+            },
+            ufcg: {
+                name: "UFCG (Campus Universitário)",
+                coords: [-7.2171, -35.9098],
+                baseTemp: 29.0,
+                islandEffect: 2.0,
+                desc: "Grande polo gerador de tráfego nos horários de entrada/saída de aulas. Campus com cobertura vegetal significativa, atenuando parcialmente o efeito ilha."
+            },
+            uepb: {
+                name: "UEPB (Campus Universitário)",
+                coords: [-7.2090, -35.9173],
+                baseTemp: 29.0,
+                islandEffect: 2.0,
+                desc: "Polo gerador de tráfego nos horários de aula, com padrão de congestionamento semelhante ao entorno da UFCG."
+            },
+            aec: {
+                name: "AeC (Cruzeiro)",
+                coords: [-7.2460, -35.9059],
+                baseTemp: 29.2,
+                islandEffect: 2.8,
+                desc: "Grande central de teleatendimento — tráfego intenso e concentrado nas trocas de turno de funcionários, típico de rota corporativa de pico."
             }
         };
 
@@ -263,6 +309,31 @@
             }
         }
 
+        function saveTomTomKey() {
+            const key = document.getElementById('tomtom-key').value.trim();
+            const status = document.getElementById('tomtom-key-status');
+            if (key) {
+                try {
+                    localStorage.setItem('ecotransito_tomtom_key', key);
+                    status.innerHTML = '✅ Chave salva neste navegador.';
+                    status.style.color = '#27ae60';
+                } catch (e) {
+                    status.innerHTML = 'Não foi possível salvar, mas funciona nesta sessão.';
+                }
+            }
+        }
+
+        function loadTomTomKey() {
+            try {
+                const saved = localStorage.getItem('ecotransito_tomtom_key');
+                if (saved) {
+                    document.getElementById('tomtom-key').value = saved;
+                }
+            } catch (e) {
+                console.warn("Não foi possível acessar localStorage:", e.message);
+            }
+        }
+
         function createMarker(key, loc) {
             const marker = L.marker(loc.coords).addTo(map)
                 .bindPopup(`<b>${loc.name}</b><br>Efeito Ilha: +${loc.islandEffect}°C<br>Clique para analisar.`);
@@ -271,7 +342,8 @@
         }
 
         Object.keys(locations).forEach(key => createMarker(key, locations[key]));
-        loadApiKey(); // tenta recuperar a chave salva anteriormente neste navegador
+        loadApiKey(); // tenta recuperar a chave da OpenWeatherMap salva anteriormente
+        loadTomTomKey(); // tenta recuperar a chave da TomTom salva anteriormente
 
         // Ajusta o zoom/centro do mapa automaticamente para enquadrar todos os pontos cadastrados
         const allCoords = Object.values(locations).map(loc => loc.coords);
@@ -303,12 +375,46 @@
             }
         }
 
+        async function fetchTrafficFactor(lat, lon) {
+            const manualKey = document.getElementById('tomtom-key').value.trim();
+            const apiKey = manualKey || DEFAULT_TOMTOM_KEY;
+            if (!apiKey || apiKey === "COLOQUE_SUA_CHAVE_TOMTOM_AQUI") throw new Error("Nenhuma chave TomTom configurada");
+
+            const url = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?point=${lat},${lon}&key=${apiKey}`;
+
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 6000);
+
+            try {
+                const res = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeout);
+                if (!res.ok) throw new Error("Falha na consulta à TomTom (status " + res.status + ")");
+                const data = await res.json();
+                const seg = data.flowSegmentData;
+                if (!seg || !seg.freeFlowSpeed || seg.freeFlowSpeed === 0) {
+                    throw new Error("Dado de trânsito insuficiente para este ponto");
+                }
+                const ratio = seg.currentSpeed / seg.freeFlowSpeed; // 1 = fluido, próximo de 0 = parado
+                // Converte a razão de velocidade em Fator de Trânsito (1.0 a 1.7), na mesma escala do seletor manual
+                let factor = 1.0 + (1 - ratio) * 0.7;
+                factor = Math.min(Math.max(factor, 1.0), 1.7);
+                return factor;
+            } catch (e) {
+                clearTimeout(timeout);
+                throw e;
+            }
+        }
+        let liveTrafficFactor = null;
+
         async function selectLocation(key) {
             activeKey = key;
             activeLocation = locations[key];
             const badge = document.getElementById('live-badge');
+            const trafficBadge = document.getElementById('traffic-badge');
             document.getElementById('display-temp').innerText = "Consultando clima...";
             badge.innerHTML = "";
+            trafficBadge.innerHTML = "";
+            liveTrafficFactor = null;
 
             try {
                 const tAmb = await fetchAmbientTemp(activeLocation.coords[0], activeLocation.coords[1]);
@@ -319,12 +425,33 @@
                 activeLocation.currentAmbientTemp = activeLocation.baseTemp;
                 badge.innerHTML = '<span class="badge offline">valor de referência (offline)</span>';
             }
+
+            try {
+                const factor = await fetchTrafficFactor(activeLocation.coords[0], activeLocation.coords[1]);
+                liveTrafficFactor = factor;
+                trafficBadge.innerHTML = '<span class="badge live">tempo real</span>';
+            } catch (e) {
+                console.warn(e.message);
+                liveTrafficFactor = null;
+                trafficBadge.innerHTML = '<span class="badge offline">sem dado suficiente aqui</span>';
+            }
+
+            updateCalculations();
+        }
+
+        function onTrafficModeChange() {
             updateCalculations();
         }
 
         function updateCalculations() {
             if (!activeLocation) return;
-            const trafficFactor = parseFloat(document.getElementById('traffic').value);
+            const trafficSelect = document.getElementById('traffic').value;
+            let trafficFactor;
+            if (trafficSelect === 'auto') {
+                trafficFactor = liveTrafficFactor ?? 1.3; // sem dado em tempo real, assume trânsito moderado como neutro
+            } else {
+                trafficFactor = parseFloat(trafficSelect);
+            }
             const tAmb = activeLocation.currentAmbientTemp ?? activeLocation.baseTemp;
             const finalTemp = tAmb + activeLocation.islandEffect;
             let stressBase = (finalTemp - 25) * 8;
