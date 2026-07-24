@@ -22,6 +22,7 @@
         .metric { font-size: 1.8rem; font-weight: bold; margin: 5px 0; }
         label { font-weight: bold; font-size: 0.9rem; }
         select, input { width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ccc; margin-top: 5px; box-sizing: border-box; font-family: inherit; }
+        input[type="checkbox"] { width: auto; padding: 0; margin: 0; }
         .progress-bar { background: #e0e0e0; border-radius: 10px; height: 15px; width: 100%; overflow: hidden; margin-top: 5px; }
         .progress-fill { height: 100%; width: 0%; transition: width 0.5s ease, background-color 0.5s ease; }
         .add-form { display: flex; flex-direction: column; gap: 8px; background: #f8f9fa; padding: 12px; border-radius: 4px; border: 1px dashed #bdc3c7; }
@@ -53,6 +54,7 @@
         <div class="panel">
             <h2>Análise de Impacto</h2>
             <p style="font-size: 0.85rem; color: #666;">Selecione um ponto no mapa e altere o nível do tráfego para simular o estresse biometeorológico.</p>
+            <p id="connection-status" style="font-size: 0.8rem; font-weight: bold; margin: -6px 0 0 0;" aria-live="polite"></p>
 
             <details id="key-setup" style="font-size: 0.85rem;">
                 <summary style="cursor: pointer; font-weight: bold; color: var(--primary);">⚙️ Opção avançada: usar outra chave de API</summary>
@@ -78,12 +80,19 @@
                 <small class="helper">No modo automático, o trânsito é medido em tempo real perto do ponto selecionado. Se não houver dado suficiente para aquele bairro, o app avisa e usa a última opção manual escolhida.</small>
             </div>
 
+            <div style="display:flex; align-items:center; gap:8px;">
+                <input type="checkbox" id="traffic-layer-toggle">
+                <label for="traffic-layer-toggle" style="font-weight:normal; font-size:0.85rem;">Mostrar fluxo de trânsito ao vivo no mapa (TomTom)</label>
+            </div>
+            <small class="helper" id="traffic-layer-status">Camada visual desligada por padrão para economizar a cota gratuita da API. Quando ligada, atualiza automaticamente a cada 90s.</small>
+
             <hr style="border: 0; border-top: 1px solid #eee; margin: 10px 0;">
 
             <div class="card success" id="temp-card" aria-live="polite" aria-atomic="true">
                 <h3>Temperatura Estimada no Asfalto <span id="live-badge"></span></h3>
                 <div class="metric" id="display-temp">-- °C</div>
                 <span id="display-microclimate" style="font-size: 0.85rem; color: #555;">Clique em um marcador no mapa</span>
+                <span id="last-updated" style="font-size: 0.72rem; color: #888; display: block; margin-top: 4px;"></span>
             </div>
 
             <div class="card" id="stress-card" aria-live="polite" aria-atomic="true">
@@ -320,6 +329,12 @@
         // depois que o usuário já clicou em outro marcador — ver selectLocation().
         let selectionToken = 0;
 
+        // Intervalo de atualização "quase em tempo real": usado tanto para reconsultar
+        // clima/trânsito do ponto selecionado quanto para redesenhar a camada visual de
+        // fluxo de trânsito. 90s é um meio-termo entre "parecer ao vivo" e não estourar
+        // a cota gratuita diária das APIs (a maioria dos planos free tem limite/dia).
+        const AUTO_REFRESH_MS = 90000;
+
         // --- Persistência das chaves de API no navegador (localStorage) ---
         // Uma única função cuida de carregar e salvar tanto a chave da OpenWeatherMap
         // quanto a da TomTom, evitando duplicar a mesma lógica duas vezes.
@@ -352,11 +367,55 @@
             });
         }
 
+        // Escapa texto antes de inserir em innerHTML (usado no popup do marcador, que
+        // aceita HTML) — evita que um nome de ponto digitado pelo usuário no formulário
+        // "Adicionar novo bairro/ponto" seja interpretado como marcação/script.
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
         function createMarker(key, loc) {
-            const marker = L.marker(loc.coords).addTo(map)
-                .bindPopup(`<b>${loc.name}</b><br>Efeito Ilha: +${loc.islandEffect}°C<br>Clique para analisar.`);
+            const isCustom = key.startsWith('custom_');
+            let popupHtml = `<b>${escapeHtml(loc.name)}</b><br>Efeito Ilha: +${loc.islandEffect}°C<br>Clique para analisar.`;
+            if (isCustom) {
+                popupHtml += `<br><button type="button" onclick="removeLocation('${key}')" style="margin-top:6px; background:#e74c3c; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:0.8rem;">🗑️ Remover este ponto</button>`;
+            }
+            const marker = L.marker(loc.coords).addTo(map).bindPopup(popupHtml);
             marker.on('click', () => selectLocation(key));
             markers[key] = marker;
+        }
+
+        // Remove um ponto adicionado pelo usuário (não se aplica aos 18 pontos originais
+        // do estudo, que não têm o botão de remover no popup).
+        function removeLocation(key) {
+            const loc = locations[key];
+            if (!loc) return;
+            if (!confirm(`Remover o ponto "${loc.name}" do mapa? Essa ação não pode ser desfeita.`)) return;
+
+            if (markers[key]) {
+                map.removeLayer(markers[key]);
+                delete markers[key];
+            }
+            delete locations[key];
+
+            if (activeKey === key) {
+                selectionToken++; // invalida qualquer consulta em andamento para este ponto (ver selectLocation)
+                activeKey = null;
+                activeLocation = null;
+                liveTrafficFactor = null;
+                document.getElementById('display-temp').innerText = "-- °C";
+                document.getElementById('display-microclimate').innerText = "Clique em um marcador no mapa";
+                document.getElementById('display-stress').innerText = "-- %";
+                document.getElementById('stress-bar').style.width = "0%";
+                document.getElementById('display-behavior').innerText = "";
+                document.getElementById('live-badge').innerHTML = "";
+                document.getElementById('traffic-badge').innerHTML = "";
+                document.getElementById('last-updated').textContent = "";
+                document.getElementById('stress-card').className = "card";
+                document.getElementById('temp-card').className = "card";
+            }
         }
 
         Object.keys(locations).forEach(key => createMarker(key, locations[key]));
@@ -366,6 +425,100 @@
         // Ajusta o zoom/centro do mapa automaticamente para enquadrar todos os pontos cadastrados
         const allCoords = Object.values(locations).map(loc => loc.coords);
         map.fitBounds(allCoords, { padding: [30, 30] });
+
+        // =====================================================================
+        // Status de conexão + atualização automática em tempo real
+        //
+        // `navigator.onLine`/`online`/`offline` são eventos padrão do navegador (não
+        // exigem nenhuma API externa) e refletem a conectividade do dispositivo.
+        // Enquanto o app estiver online, com a aba visível e um ponto selecionado, um
+        // temporizador único reconsulta clima+trânsito daquele ponto a cada
+        // AUTO_REFRESH_MS — reaproveitando a mesma selectLocation() já usada no clique
+        // do marcador (mesmo tratamento de erro, mesma proteção contra corrida).
+        // =====================================================================
+        function updateConnectionStatus() {
+            const el = document.getElementById('connection-status');
+            if (navigator.onLine) {
+                el.textContent = '🟢 Conectado — clima e trânsito em tempo real disponíveis';
+                el.style.color = '#1e8449';
+            } else {
+                el.textContent = '🔴 Sem conexão com a internet — usando valores de referência (offline)';
+                el.style.color = '#935116';
+            }
+        }
+        updateConnectionStatus();
+
+        window.addEventListener('online', () => {
+            updateConnectionStatus();
+            if (activeKey) selectLocation(activeKey, { silent: true }); // voltou a ficar online: atualiza na hora
+        });
+        window.addEventListener('offline', updateConnectionStatus);
+
+        // Se o usuário deixar a aba em segundo plano e voltar, atualiza na hora em vez
+        // de esperar o próximo tique do temporizador (que fica pausado por padrão pelo
+        // próprio navegador enquanto a aba está oculta).
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && activeKey && navigator.onLine) {
+                selectLocation(activeKey, { silent: true });
+            }
+        });
+
+        setInterval(() => {
+            if (activeKey && navigator.onLine && document.visibilityState === 'visible') {
+                selectLocation(activeKey, { silent: true });
+            }
+        }, AUTO_REFRESH_MS);
+
+        // --- Camada visual de fluxo de trânsito ao vivo (TomTom Traffic Flow Tiles) ---
+        // Diferente do "Fator de Trânsito" (um número para o ponto selecionado), esta é
+        // uma camada de imagem sobreposta ao mapa inteiro, com as vias coloridas conforme
+        // o congestionamento atual. Fica desligada por padrão (o usuário liga pelo
+        // checkbox) para não gastar a cota gratuita da API só de fundo.
+        let trafficFlowLayer = null;
+        let trafficFlowRefreshTimer = null;
+
+        function buildTrafficFlowTileUrl() {
+            const manualKey = document.getElementById('tomtom-key').value.trim();
+            const apiKey = manualKey || DEFAULT_TOMTOM_KEY;
+            // "&_=" só serve para forçar o navegador/Leaflet a buscar tiles novos a cada
+            // atualização, em vez de reaproveitar uma cópia em cache.
+            return `https://api.tomtom.com/traffic/map/4/tile/flow/relative/{z}/{x}/{y}.png?key=${apiKey}&thickness=10&_=${Date.now()}`;
+        }
+
+        document.getElementById('traffic-layer-toggle').addEventListener('change', (e) => {
+            const statusEl = document.getElementById('traffic-layer-status');
+            if (e.target.checked) {
+                let tileErrorShown = false;
+                trafficFlowLayer = L.tileLayer(buildTrafficFlowTileUrl(), {
+                    opacity: 0.7,
+                    maxZoom: 19,
+                    attribution: 'Fluxo de trânsito: © TomTom'
+                });
+                trafficFlowLayer.on('tileerror', () => {
+                    if (tileErrorShown) return;
+                    tileErrorShown = true;
+                    statusEl.textContent = 'Não foi possível carregar o fluxo de trânsito agora (verifique a chave TomTom ou a conexão).';
+                    statusEl.style.color = '#c0392b';
+                });
+                trafficFlowLayer.addTo(map);
+                statusEl.textContent = `Camada ativa — atualiza a cada ${AUTO_REFRESH_MS / 1000}s enquanto ligada.`;
+                statusEl.style.color = '';
+                trafficFlowRefreshTimer = setInterval(() => {
+                    if (trafficFlowLayer && navigator.onLine && document.visibilityState === 'visible') {
+                        trafficFlowLayer.setUrl(buildTrafficFlowTileUrl());
+                    }
+                }, AUTO_REFRESH_MS);
+            } else {
+                if (trafficFlowLayer) {
+                    map.removeLayer(trafficFlowLayer);
+                    trafficFlowLayer = null;
+                }
+                clearInterval(trafficFlowRefreshTimer);
+                trafficFlowRefreshTimer = null;
+                statusEl.textContent = 'Camada visual desligada por padrão para economizar a cota gratuita da API. Quando ligada, atualiza automaticamente a cada 90s.';
+                statusEl.style.color = '';
+            }
+        });
 
         // Executa um fetch com timeout de segurança: se a API demorar mais que o previsto
         // (rede instável, sem sinal), aborta e sinaliza um erro claro em vez de travar a UI.
@@ -421,7 +574,11 @@
             return Math.min(Math.max(factor, 1.0), 1.7);
         }
 
-        async function selectLocation(key) {
+        // `silent`: usado pela atualização automática em segundo plano (ver setInterval
+        // mais abaixo) para reconsultar o ponto já selecionado sem "piscar" a tela com o
+        // texto "Consultando clima..." — os valores antigos ficam visíveis até os novos
+        // chegarem, e só então são substituídos.
+        async function selectLocation(key, { silent = false } = {}) {
             // Token desta chamada específica: se, enquanto as APIs respondem, o usuário
             // clicar em outro marcador (novo token), esta chamada percebe que foi
             // "ultrapassada" e não escreve mais nada na tela (ver checagem abaixo).
@@ -432,10 +589,29 @@
 
             const badge = document.getElementById('live-badge');
             const trafficBadge = document.getElementById('traffic-badge');
-            document.getElementById('display-temp').innerText = "Consultando clima...";
-            document.getElementById('display-microclimate').innerText = `${loc.name}. Consultando dados em tempo real...`;
-            badge.innerHTML = "";
-            trafficBadge.innerHTML = "";
+            const lastUpdatedEl = document.getElementById('last-updated');
+
+            if (!silent) {
+                document.getElementById('display-temp').innerText = "Consultando clima...";
+                document.getElementById('display-microclimate').innerText = `${loc.name}. Consultando dados em tempo real...`;
+                badge.innerHTML = "";
+                trafficBadge.innerHTML = "";
+            } else if (lastUpdatedEl) {
+                lastUpdatedEl.textContent = "Atualizando em segundo plano...";
+            }
+
+            // Sem internet: nem tenta a rede (evita esperar o timeout de 6s à toa) e já
+            // cai direto no valor de referência offline.
+            if (!navigator.onLine) {
+                loc.currentAmbientTemp = loc.baseTemp;
+                if (token !== selectionToken) return;
+                liveTrafficFactor = null;
+                badge.innerHTML = '<span class="badge offline">valor de referência (offline)</span>';
+                trafficBadge.innerHTML = '<span class="badge offline">sem conexão</span>';
+                if (lastUpdatedEl) lastUpdatedEl.textContent = `Sem conexão — última tentativa: ${new Date().toLocaleTimeString('pt-BR')}`;
+                updateCalculations();
+                return;
+            }
 
             // As duas consultas rodam em paralelo (mais rápido) e cada uma trata seu
             // próprio erro sem derrubar a outra.
@@ -469,6 +645,7 @@
                 trafficBadge.querySelector('span').title = trafficResult.reason.message;
             }
 
+            if (lastUpdatedEl) lastUpdatedEl.textContent = `Última atualização: ${new Date().toLocaleTimeString('pt-BR')}`;
             updateCalculations();
         }
 
