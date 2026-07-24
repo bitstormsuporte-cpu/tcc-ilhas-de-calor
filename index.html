@@ -20,6 +20,15 @@
         .card.success { border-left-color: #2ecc71; }
         .card h3 { margin: 0 0 8px 0; font-size: 1rem; color: var(--primary); }
         .metric { font-size: 1.8rem; font-weight: bold; margin: 5px 0; }
+        /* Cards de resultado (temperatura, trânsito, irritabilidade): número grande e
+           centralizado como foco principal, para leitura rápida — ver mockup do Canva. */
+        .card-hero { text-align: center; }
+        .card-hero h3 { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #7f8c8d; margin: 0 0 6px 0; }
+        .card-hero .metric { font-size: 2.5rem; margin: 2px 0; }
+        .card-hero.success .metric { color: #219150; }
+        .card-hero.warning .metric { color: #d35400; }
+        .card-hero.danger .metric { color: #c0392b; }
+        .card-desc { font-size: 0.85rem; color: #555; margin: 4px 0 0 0; }
         label { font-weight: bold; font-size: 0.9rem; }
         select, input { width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ccc; margin-top: 5px; box-sizing: border-box; font-family: inherit; }
         input[type="checkbox"] { width: auto; padding: 0; margin: 0; }
@@ -41,7 +50,7 @@
         .search-results li:last-child { border-bottom: none; }
         .search-results li:hover, .search-results li[aria-selected="true"] { background: #eaf2f8; }
         @media (max-width: 768px) { .container { flex-direction: column; } .panel { width: auto; height: 45%; } #map { height: 55%; } }
-        @media (max-width: 480px) { header { padding: 10px; } header h1 { font-size: 1.15rem; } header p { font-size: 0.8rem; } .panel { padding: 12px; gap: 10px; } .metric { font-size: 1.5rem; } }
+        @media (max-width: 480px) { header { padding: 10px; } header h1 { font-size: 1.15rem; } header p { font-size: 0.8rem; } .panel { padding: 12px; gap: 10px; } .metric { font-size: 1.5rem; } .card-hero .metric { font-size: 2rem; } }
     </style>
 </head>
 <body>
@@ -88,20 +97,26 @@
 
             <hr style="border: 0; border-top: 1px solid #eee; margin: 10px 0;">
 
-            <div class="card success" id="temp-card" aria-live="polite" aria-atomic="true">
-                <h3>Temperatura Estimada no Asfalto <span id="live-badge"></span></h3>
+            <div class="card card-hero success" id="temp-card" aria-live="polite" aria-atomic="true">
+                <h3>🌡️ Temperatura Estimada no Asfalto <span id="live-badge"></span></h3>
                 <div class="metric" id="display-temp">-- °C</div>
-                <span id="display-microclimate" style="font-size: 0.85rem; color: #555;">Clique em um marcador no mapa</span>
+                <span id="display-microclimate" class="card-desc">Clique em um marcador no mapa</span>
                 <span id="last-updated" style="font-size: 0.72rem; color: #888; display: block; margin-top: 4px;"></span>
             </div>
 
-            <div class="card" id="stress-card" aria-live="polite" aria-atomic="true">
-                <h3>Índice de Irritabilidade do Motorista</h3>
+            <div class="card card-hero" id="traffic-condition-card" aria-live="polite" aria-atomic="true">
+                <h3>🚦 Condição do Trânsito <span id="traffic-source-badge"></span></h3>
+                <div class="metric" id="display-traffic-condition">--</div>
+                <p id="traffic-condition-desc" class="card-desc"></p>
+            </div>
+
+            <div class="card card-hero" id="stress-card" aria-live="polite" aria-atomic="true">
+                <h3>😤 Índice de Irritabilidade do Motorista</h3>
                 <div class="metric" id="display-stress">-- %</div>
                 <div class="progress-bar">
                     <div id="stress-bar" class="progress-fill"></div>
                 </div>
-                <p id="display-behavior" style="font-size: 0.85rem; margin: 8px 0 0 0; font-weight: 500;"></p>
+                <p id="display-behavior" class="card-desc" style="font-weight: 500; margin-top: 8px;"></p>
             </div>
 
             <hr style="border: 0; border-top: 1px solid #eee; margin: 10px 0;">
@@ -413,8 +428,12 @@
                 document.getElementById('live-badge').innerHTML = "";
                 document.getElementById('traffic-badge').innerHTML = "";
                 document.getElementById('last-updated').textContent = "";
-                document.getElementById('stress-card').className = "card";
-                document.getElementById('temp-card').className = "card";
+                document.getElementById('display-traffic-condition').innerText = "--";
+                document.getElementById('traffic-condition-desc').innerText = "";
+                document.getElementById('traffic-source-badge').innerHTML = "";
+                document.getElementById('stress-card').className = "card card-hero";
+                document.getElementById('temp-card').className = "card card-hero";
+                document.getElementById('traffic-condition-card').className = "card card-hero";
             }
         }
 
@@ -671,14 +690,43 @@
             document.getElementById('display-microclimate').innerText = `${activeLocation.name}. ${activeLocation.desc} (Efeito Ilha: +${activeLocation.islandEffect}°C)`;
             document.getElementById('display-stress').innerText = `${finalStress}%`;
 
+            // Traduz o Fator de Trânsito (1.0 a 1.7, um número abstrato) em uma categoria
+            // simples e visual — mesma ideia das opções manuais do seletor (Fluido/Moderado/
+            // Intenso), só que aplicada também ao valor vindo em tempo real da TomTom.
+            const trafficCard = document.getElementById('traffic-condition-card');
+            const trafficLabelEl = document.getElementById('display-traffic-condition');
+            const trafficDescEl = document.getElementById('traffic-condition-desc');
+            const trafficSourceBadge = document.getElementById('traffic-source-badge');
+            let trafficCategory, trafficDesc;
+            if (trafficFactor <= 1.15) {
+                trafficCategory = "🟢 Tranquilo";
+                trafficDesc = "Vias fluindo normalmente, sem retenções relevantes.";
+                trafficCard.className = "card card-hero success";
+            } else if (trafficFactor <= 1.5) {
+                trafficCategory = "🟡 Moderado";
+                trafficDesc = "Tráfego mais lento que o normal, com pontos de retenção.";
+                trafficCard.className = "card card-hero warning";
+            } else {
+                trafficCategory = "🔴 Congestionado / Parado";
+                trafficDesc = "Trânsito muito lento ou parado — alta lentidão nas vias.";
+                trafficCard.className = "card card-hero danger";
+            }
+            trafficLabelEl.innerText = trafficCategory;
+            trafficDescEl.innerText = `${trafficDesc} (Fator de Trânsito: ${trafficFactor.toFixed(2)})`;
+            // Fora do modo automático, o badge "tempo real/offline" do seletor não se aplica
+            // (o valor veio de uma escolha manual, não de consulta à API).
+            trafficSourceBadge.innerHTML = trafficSelect === 'auto'
+                ? document.getElementById('traffic-badge').innerHTML
+                : '<span class="badge">seleção manual</span>';
+
             const stressBar = document.getElementById('stress-bar');
             const stressCard = document.getElementById('stress-card');
             const tempCard = document.getElementById('temp-card');
             const behaviorText = document.getElementById('display-behavior');
 
             stressBar.style.width = `${finalStress}%`;
-            stressCard.className = "card";
-            tempCard.className = "card";
+            stressCard.className = "card card-hero";
+            tempCard.className = "card card-hero";
 
             if (finalStress < 45) {
                 stressBar.style.backgroundColor = "#2ecc71";
@@ -693,7 +741,7 @@
             } else {
                 stressBar.style.backgroundColor = "#e74c3c";
                 stressCard.classList.add("danger");
-                tempCard.className = "card danger";
+                tempCard.className = "card card-hero danger";
                 behaviorText.innerText = "ALERTA CRÍTICO: Irritabilidade extrema. Alta propensão a condutas agressivas, discussões e perda de reflexos defensivos devido ao calor sufocante e confinamento.";
                 behaviorText.style.color = "#c0392b";
             }
