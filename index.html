@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { --primary: #2c3e50; --bg: #f4f6f7; --card-bg: #ffffff; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: var(--bg); color: #333; display: flex; flex-direction: column; height: 100vh; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: var(--bg); color: #333; display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
         header { background-color: var(--primary); color: white; padding: 15px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         header h1 { margin: 0; font-size: 1.4rem; }
         header p { margin: 5px 0 0 0; font-size: 0.9rem; opacity: 0.8; }
@@ -27,13 +27,20 @@
         .add-form { display: flex; flex-direction: column; gap: 8px; background: #f8f9fa; padding: 12px; border-radius: 4px; border: 1px dashed #bdc3c7; }
         .add-form button { background: var(--primary); color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer; font-weight: bold; }
         .add-form button:hover { opacity: 0.9; }
+        .add-form label.field-label { display: block; font-weight: normal; font-size: 0.8rem; color: #666; margin: 4px 0 0 0; }
         .row2 { display: flex; gap: 8px; }
         .row2 > div { flex: 1; }
         .badge { display: inline-block; font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; background: #eee; margin-left: 6px; }
         .badge.live { background: #d4efdf; color: #1e8449; }
         .badge.offline { background: #fdebd0; color: #935116; }
-        small.helper { color: #888; font-size: 0.75rem; }
+        small.helper { color: #6b6b6b; font-size: 0.75rem; }
+        .search-wrap { position: relative; }
+        .search-results { list-style: none; margin: 2px 0 0 0; padding: 4px 0; position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ccc; border-radius: 4px; max-height: 220px; overflow-y: auto; z-index: 1200; box-shadow: 0 4px 10px rgba(0,0,0,0.15); }
+        .search-results li { padding: 8px 10px; font-size: 0.85rem; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
+        .search-results li:last-child { border-bottom: none; }
+        .search-results li:hover, .search-results li[aria-selected="true"] { background: #eaf2f8; }
         @media (max-width: 768px) { .container { flex-direction: column; } .panel { width: auto; height: 45%; } #map { height: 55%; } }
+        @media (max-width: 480px) { header { padding: 10px; } header h1 { font-size: 1.15rem; } header p { font-size: 0.8rem; } .panel { padding: 12px; gap: 10px; } .metric { font-size: 1.5rem; } }
     </style>
 </head>
 <body>
@@ -51,11 +58,11 @@
                 <summary style="cursor: pointer; font-weight: bold; color: var(--primary);">⚙️ Opção avançada: usar outra chave de API</summary>
                 <div style="margin-top: 8px;">
                     <label for="owm-key">Chave da API OpenWeatherMap (opcional):</label>
-                    <input type="text" id="owm-key" placeholder="Deixe em branco para usar a chave padrão do app" oninput="saveApiKey()">
+                    <input type="text" id="owm-key" placeholder="Deixe em branco para usar a chave padrão do app">
                     <small class="helper" id="key-status">O app já vem com uma chave configurada e funciona sozinho em qualquer computador. Só preencha aqui se quiser usar sua própria chave pessoal.</small>
 
                     <label for="tomtom-key" style="display:block; margin-top: 10px;">Chave da API TomTom Traffic (opcional):</label>
-                    <input type="text" id="tomtom-key" placeholder="Deixe em branco para usar a chave padrão do app" oninput="saveTomTomKey()">
+                    <input type="text" id="tomtom-key" placeholder="Deixe em branco para usar a chave padrão do app">
                     <small class="helper" id="tomtom-key-status">Usada para medir o trânsito em tempo real. Também já vem configurada por padrão.</small>
                 </div>
             </details>
@@ -73,13 +80,13 @@
 
             <hr style="border: 0; border-top: 1px solid #eee; margin: 10px 0;">
 
-            <div class="card success" id="temp-card">
+            <div class="card success" id="temp-card" aria-live="polite" aria-atomic="true">
                 <h3>Temperatura Estimada no Asfalto <span id="live-badge"></span></h3>
                 <div class="metric" id="display-temp">-- °C</div>
                 <span id="display-microclimate" style="font-size: 0.85rem; color: #555;">Clique em um marcador no mapa</span>
             </div>
 
-            <div class="card" id="stress-card">
+            <div class="card" id="stress-card" aria-live="polite" aria-atomic="true">
                 <h3>Índice de Irritabilidade do Motorista</h3>
                 <div class="metric" id="display-stress">-- %</div>
                 <div class="progress-bar">
@@ -105,16 +112,41 @@
 
             <div class="add-form">
                 <strong style="font-size: 0.9rem;">+ Adicionar novo bairro/ponto</strong>
-                <input type="text" id="new-name" placeholder="Nome do bairro (ex: Bodocongó)">
-                <div class="row2">
-                    <div><input type="text" id="new-lat" placeholder="Latitude (ex: -7.2312)"></div>
-                    <div><input type="text" id="new-lon" placeholder="Longitude (ex: -35.9012)"></div>
-                </div>
+
                 <div>
-                    <label style="font-weight:normal; font-size:0.85rem;">Efeito de Ilha de Calor (°C): <span id="island-val">2.0</span></label>
+                    <label for="new-name" class="field-label">Nome do bairro/ponto</label>
+                    <input type="text" id="new-name" placeholder="Ex: Bodocongó">
+                </div>
+
+                <div class="search-wrap">
+                    <label for="new-search" class="field-label">Buscar local (OpenStreetMap)</label>
+                    <input type="text" id="new-search" placeholder="Digite e escolha uma sugestão (ex: Bodocongó, Campina Grande)"
+                           autocomplete="off" role="combobox" aria-expanded="false" aria-controls="search-results"
+                           aria-autocomplete="list" aria-describedby="search-status">
+                    <ul id="search-results" class="search-results" role="listbox" hidden></ul>
+                    <small class="helper" id="search-status" aria-live="polite">Busca por nome via Nominatim/OpenStreetMap (não exige chave de API). Ao escolher uma sugestão, latitude e longitude são preenchidas automaticamente.</small>
+                </div>
+
+                <label class="field-label" style="margin-top: 6px;">Ou informe manualmente:</label>
+                <div class="row2">
+                    <div>
+                        <label for="new-lat" class="field-label">Latitude</label>
+                        <input type="text" id="new-lat" placeholder="Ex: -7.2312" inputmode="decimal">
+                    </div>
+                    <div>
+                        <label for="new-lon" class="field-label">Longitude</label>
+                        <input type="text" id="new-lon" placeholder="Ex: -35.9012" inputmode="decimal">
+                    </div>
+                </div>
+
+                <div>
+                    <label for="new-island" style="font-weight:normal; font-size:0.85rem;">Efeito de Ilha de Calor (°C): <span id="island-val">2.0</span></label>
                     <input type="range" id="new-island" min="0" max="5" step="0.1" value="2.0" oninput="document.getElementById('island-val').innerText = this.value">
                 </div>
-                <input type="text" id="new-desc" placeholder="Descrição curta da área">
+                <div>
+                    <label for="new-desc" class="field-label">Descrição curta da área</label>
+                    <input type="text" id="new-desc" placeholder="Descrição curta da área">
+                </div>
                 <button onclick="addNewLocation()">Adicionar ao mapa</button>
                 <small class="helper">O efeito de ilha de calor é um coeficiente do seu estudo de campo (não vem de API) — ajuste com base na sua metodologia (verticalização, cobertura vegetal, tipo de pavimento).</small>
             </div>
@@ -135,6 +167,9 @@
 
         const map = L.map('map').setView([-7.21, -35.85], 11);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' }).addTo(map);
+        // Sobrescreve o rótulo padrão (em inglês) que o Leaflet aplica ao container do mapa,
+        // para leitores de tela anunciarem o propósito do mapa em português.
+        map.getContainer().setAttribute('aria-label', 'Mapa interativo com os pontos de monitoramento de ilha de calor em Campina Grande e Massaranduba');
 
         // Banco de dados de locais. Cada local guarda:
         // - coords: [lat, lon] usado tanto para o marcador quanto para a consulta de clima
@@ -279,59 +314,42 @@
         const markers = {};
         let activeLocation = null;
         let activeKey = null;
+        let liveTrafficFactor = null;
+        // Contador de "requisição vencedora": incrementado a cada seleção de ponto.
+        // Evita que uma consulta antiga (ainda em andamento) sobrescreva a tela
+        // depois que o usuário já clicou em outro marcador — ver selectLocation().
+        let selectionToken = 0;
 
-        // --- Persistência da chave de API no navegador (localStorage) ---
-        function saveApiKey() {
-            const key = document.getElementById('owm-key').value.trim();
-            const status = document.getElementById('key-status');
-            if (key) {
-                try {
-                    localStorage.setItem('ecotransito_owm_key', key);
-                    status.innerHTML = '✅ Chave salva neste navegador. Não será preciso colar de novo.';
-                    status.style.color = '#27ae60';
-                } catch (e) {
-                    status.innerHTML = 'Não foi possível salvar a chave neste navegador, mas ela ainda funciona nesta sessão.';
-                }
-            }
-        }
+        // --- Persistência das chaves de API no navegador (localStorage) ---
+        // Uma única função cuida de carregar e salvar tanto a chave da OpenWeatherMap
+        // quanto a da TomTom, evitando duplicar a mesma lógica duas vezes.
+        function bindApiKeyField(inputId, storageKey, statusId) {
+            const input = document.getElementById(inputId);
+            const status = document.getElementById(statusId);
 
-        function loadApiKey() {
             try {
-                const saved = localStorage.getItem('ecotransito_owm_key');
+                const saved = localStorage.getItem(storageKey);
                 if (saved) {
-                    document.getElementById('owm-key').value = saved;
-                    document.getElementById('key-status').innerHTML = '✅ Chave carregada automaticamente deste navegador.';
-                    document.getElementById('key-status').style.color = '#27ae60';
+                    input.value = saved;
+                    status.innerHTML = '✅ Chave carregada automaticamente deste navegador.';
+                    status.style.color = '#27ae60';
                 }
             } catch (e) {
                 // localStorage indisponível (ex.: pré-visualização em ambiente restrito) — segue sem travar o app
                 console.warn("Não foi possível acessar localStorage:", e.message);
             }
-        }
 
-        function saveTomTomKey() {
-            const key = document.getElementById('tomtom-key').value.trim();
-            const status = document.getElementById('tomtom-key-status');
-            if (key) {
+            input.addEventListener('input', () => {
+                const key = input.value.trim();
+                if (!key) return;
                 try {
-                    localStorage.setItem('ecotransito_tomtom_key', key);
-                    status.innerHTML = '✅ Chave salva neste navegador.';
+                    localStorage.setItem(storageKey, key);
+                    status.innerHTML = '✅ Chave salva neste navegador. Não será preciso colar de novo.';
                     status.style.color = '#27ae60';
                 } catch (e) {
-                    status.innerHTML = 'Não foi possível salvar, mas funciona nesta sessão.';
+                    status.innerHTML = 'Não foi possível salvar a chave neste navegador, mas ela ainda funciona nesta sessão.';
                 }
-            }
-        }
-
-        function loadTomTomKey() {
-            try {
-                const saved = localStorage.getItem('ecotransito_tomtom_key');
-                if (saved) {
-                    document.getElementById('tomtom-key').value = saved;
-                }
-            } catch (e) {
-                console.warn("Não foi possível acessar localStorage:", e.message);
-            }
+            });
         }
 
         function createMarker(key, loc) {
@@ -342,98 +360,113 @@
         }
 
         Object.keys(locations).forEach(key => createMarker(key, locations[key]));
-        loadApiKey(); // tenta recuperar a chave da OpenWeatherMap salva anteriormente
-        loadTomTomKey(); // tenta recuperar a chave da TomTom salva anteriormente
+        bindApiKeyField('owm-key', 'ecotransito_owm_key', 'key-status');
+        bindApiKeyField('tomtom-key', 'ecotransito_tomtom_key', 'tomtom-key-status');
 
         // Ajusta o zoom/centro do mapa automaticamente para enquadrar todos os pontos cadastrados
         const allCoords = Object.values(locations).map(loc => loc.coords);
         map.fitBounds(allCoords, { padding: [30, 30] });
 
+        // Executa um fetch com timeout de segurança: se a API demorar mais que o previsto
+        // (rede instável, sem sinal), aborta e sinaliza um erro claro em vez de travar a UI.
+        async function fetchWithTimeout(url, timeoutMs = 6000) {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                return await fetch(url, { signal: controller.signal });
+            } catch (e) {
+                if (e.name === 'AbortError') throw new Error(`Tempo de resposta excedido (${timeoutMs / 1000}s)`);
+                throw new Error("Falha de rede ao contatar a API (verifique sua conexão)");
+            } finally {
+                clearTimeout(timeout);
+            }
+        }
+
         async function fetchAmbientTemp(lat, lon) {
             const manualKey = document.getElementById('owm-key').value.trim();
             const apiKey = manualKey || DEFAULT_OWM_KEY;
-            if (!apiKey || apiKey === "COLOQUE_SUA_CHAVE_AQUI") throw new Error("Nenhuma chave de API configurada");
+            if (!apiKey) throw new Error("Nenhuma chave de API configurada");
 
             const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&appid=${apiKey}`;
-
-            // Timeout de segurança: se a API demorar mais de 6s (rede instável, sem sinal), cai no modo offline
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 6000);
-
-            try {
-                const res = await fetch(url, { signal: controller.signal });
-                clearTimeout(timeout);
-                if (!res.ok) {
-                    if (res.status === 401) throw new Error("Chave de API inválida ou ainda não ativada (pode levar até 2h após criação)");
-                    throw new Error("Falha na consulta à OpenWeatherMap (status " + res.status + ")");
-                }
-                const data = await res.json();
-                return data.main.temp;
-            } catch (e) {
-                clearTimeout(timeout);
-                throw e;
+            const res = await fetchWithTimeout(url);
+            if (!res.ok) {
+                if (res.status === 401) throw new Error("Chave de API inválida ou ainda não ativada (pode levar até 2h após criação)");
+                if (res.status === 429) throw new Error("Limite de requisições da OpenWeatherMap atingido, tente novamente em instantes");
+                throw new Error("Falha na consulta à OpenWeatherMap (status " + res.status + ")");
             }
+            const data = await res.json();
+            return data.main.temp;
         }
 
         async function fetchTrafficFactor(lat, lon) {
             const manualKey = document.getElementById('tomtom-key').value.trim();
             const apiKey = manualKey || DEFAULT_TOMTOM_KEY;
-            if (!apiKey || apiKey === "COLOQUE_SUA_CHAVE_TOMTOM_AQUI") throw new Error("Nenhuma chave TomTom configurada");
+            if (!apiKey) throw new Error("Nenhuma chave TomTom configurada");
 
             const url = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?point=${lat},${lon}&key=${apiKey}`;
-
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 6000);
-
-            try {
-                const res = await fetch(url, { signal: controller.signal });
-                clearTimeout(timeout);
-                if (!res.ok) throw new Error("Falha na consulta à TomTom (status " + res.status + ")");
-                const data = await res.json();
-                const seg = data.flowSegmentData;
-                if (!seg || !seg.freeFlowSpeed || seg.freeFlowSpeed === 0) {
-                    throw new Error("Dado de trânsito insuficiente para este ponto");
-                }
-                const ratio = seg.currentSpeed / seg.freeFlowSpeed; // 1 = fluido, próximo de 0 = parado
-                // Converte a razão de velocidade em Fator de Trânsito (1.0 a 1.7), na mesma escala do seletor manual
-                let factor = 1.0 + (1 - ratio) * 0.7;
-                factor = Math.min(Math.max(factor, 1.0), 1.7);
-                return factor;
-            } catch (e) {
-                clearTimeout(timeout);
-                throw e;
+            const res = await fetchWithTimeout(url);
+            if (!res.ok) {
+                if (res.status === 401 || res.status === 403) throw new Error("Chave TomTom inválida ou sem permissão");
+                if (res.status === 429) throw new Error("Limite de requisições da TomTom atingido, tente novamente em instantes");
+                throw new Error("Falha na consulta à TomTom (status " + res.status + ")");
             }
+            const data = await res.json();
+            const seg = data.flowSegmentData;
+            if (!seg || !seg.freeFlowSpeed || seg.freeFlowSpeed === 0) {
+                throw new Error("Dado de trânsito insuficiente para este ponto");
+            }
+            const ratio = seg.currentSpeed / seg.freeFlowSpeed; // 1 = fluido, próximo de 0 = parado
+            // Converte a razão de velocidade em Fator de Trânsito (1.0 a 1.7), na mesma escala do seletor manual
+            const factor = 1.0 + (1 - ratio) * 0.7;
+            return Math.min(Math.max(factor, 1.0), 1.7);
         }
-        let liveTrafficFactor = null;
 
         async function selectLocation(key) {
+            // Token desta chamada específica: se, enquanto as APIs respondem, o usuário
+            // clicar em outro marcador (novo token), esta chamada percebe que foi
+            // "ultrapassada" e não escreve mais nada na tela (ver checagem abaixo).
+            const token = ++selectionToken;
+            const loc = locations[key];
             activeKey = key;
-            activeLocation = locations[key];
+            activeLocation = loc;
+
             const badge = document.getElementById('live-badge');
             const trafficBadge = document.getElementById('traffic-badge');
             document.getElementById('display-temp').innerText = "Consultando clima...";
+            document.getElementById('display-microclimate').innerText = `${loc.name}. Consultando dados em tempo real...`;
             badge.innerHTML = "";
             trafficBadge.innerHTML = "";
-            liveTrafficFactor = null;
 
-            try {
-                const tAmb = await fetchAmbientTemp(activeLocation.coords[0], activeLocation.coords[1]);
-                activeLocation.currentAmbientTemp = tAmb;
+            // As duas consultas rodam em paralelo (mais rápido) e cada uma trata seu
+            // próprio erro sem derrubar a outra.
+            const [tempResult, trafficResult] = await Promise.allSettled([
+                fetchAmbientTemp(loc.coords[0], loc.coords[1]),
+                fetchTrafficFactor(loc.coords[0], loc.coords[1])
+            ]);
+
+            // O objeto do local é sempre atualizado com o dado mais recente que chegou,
+            // mesmo que esta seleção já tenha sido "ultrapassada" — assim, da próxima vez
+            // que o usuário clicar neste mesmo ponto, o valor já estará pronto.
+            loc.currentAmbientTemp = tempResult.status === 'fulfilled' ? tempResult.value : loc.baseTemp;
+
+            if (token !== selectionToken) return; // seleção antiga: não mexe mais na tela
+
+            if (tempResult.status === 'fulfilled') {
                 badge.innerHTML = '<span class="badge live">clima em tempo real</span>';
-            } catch (e) {
-                console.warn(e.message);
-                activeLocation.currentAmbientTemp = activeLocation.baseTemp;
+            } else {
+                console.warn(tempResult.reason.message);
                 badge.innerHTML = '<span class="badge offline">valor de referência (offline)</span>';
+                badge.querySelector('span').title = tempResult.reason.message;
             }
 
-            try {
-                const factor = await fetchTrafficFactor(activeLocation.coords[0], activeLocation.coords[1]);
-                liveTrafficFactor = factor;
+            if (trafficResult.status === 'fulfilled') {
+                liveTrafficFactor = trafficResult.value;
                 trafficBadge.innerHTML = '<span class="badge live">tempo real</span>';
-            } catch (e) {
-                console.warn(e.message);
+            } else {
+                console.warn(trafficResult.reason.message);
                 liveTrafficFactor = null;
                 trafficBadge.innerHTML = '<span class="badge offline">sem dado suficiente aqui</span>';
+                trafficBadge.querySelector('span').title = trafficResult.reason.message;
             }
 
             updateCalculations();
@@ -489,6 +522,188 @@
             }
         }
 
+        // =====================================================================
+        // Busca de local por nome (Nominatim / OpenStreetMap) — preenche
+        // automaticamente latitude/longitude no formulário "Adicionar novo bairro/ponto".
+        //
+        // Política de uso da Nominatim (operations.osmfoundation.org/policies/nominatim):
+        //  - Máx. 1 requisição/segundo: aqui garantido por debounce de 500ms (só busca
+        //    depois que o usuário para de digitar) + cancelamento de qualquer busca
+        //    anterior ainda em andamento (nunca há duas requisições simultâneas).
+        //  - É preciso identificar a aplicação via header HTTP `Referer` ou `User-Agent`.
+        //    JavaScript de navegador não pode definir `User-Agent` (é um header proibido
+        //    pela própria especificação fetch/XHR), mas o navegador sempre envia o
+        //    `Referer` automaticamente com a URL da página (ex.: o domínio do GitHub
+        //    Pages) — isso já satisfaz o requisito de identificação para uso client-side,
+        //    conforme reconhecido na própria documentação da Nominatim.
+        //  - Resultado limitado a 5 sugestões (limit=5, igual ao pedido no enunciado).
+        // =====================================================================
+        const searchInput = document.getElementById('new-search');
+        const searchResultsEl = document.getElementById('search-results');
+        const searchStatusEl = document.getElementById('search-status');
+        const searchStatusDefaultText = searchStatusEl.textContent;
+
+        let searchDebounceTimer = null;
+        let searchAbortController = null;
+        let searchResultsData = [];
+        let searchActiveIndex = -1;
+
+        searchInput.addEventListener('input', () => {
+            scheduleNominatimSearch(searchInput.value.trim());
+        });
+
+        searchInput.addEventListener('keydown', (e) => {
+            if (searchResultsEl.hidden) return;
+            const items = Array.from(searchResultsEl.querySelectorAll('li'));
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                searchActiveIndex = Math.min(searchActiveIndex + 1, items.length - 1);
+                highlightSearchResult(items);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                searchActiveIndex = Math.max(searchActiveIndex - 1, 0);
+                highlightSearchResult(items);
+            } else if (e.key === 'Enter') {
+                if (searchActiveIndex >= 0) {
+                    e.preventDefault();
+                    selectSearchResult(searchActiveIndex);
+                }
+            } else if (e.key === 'Escape') {
+                closeSearchResults();
+            }
+        });
+
+        // Dá tempo do "mousedown" no item da lista ser processado antes do input perder o
+        // foco e a lista fechar (blur dispara antes do click em elementos diferentes).
+        searchInput.addEventListener('blur', () => {
+            setTimeout(closeSearchResults, 150);
+        });
+
+        function highlightSearchResult(items) {
+            items.forEach((li, i) => li.setAttribute('aria-selected', i === searchActiveIndex ? 'true' : 'false'));
+            searchInput.setAttribute('aria-activedescendant', searchActiveIndex >= 0 ? items[searchActiveIndex].id : '');
+            if (searchActiveIndex >= 0) items[searchActiveIndex].scrollIntoView({ block: 'nearest' });
+        }
+
+        function scheduleNominatimSearch(term) {
+            clearTimeout(searchDebounceTimer);
+            searchActiveIndex = -1;
+            if (term.length < 3) {
+                if (searchAbortController) searchAbortController.abort();
+                closeSearchResults();
+                return;
+            }
+            searchDebounceTimer = setTimeout(() => runNominatimSearch(term), 500);
+        }
+
+        async function runNominatimSearch(term) {
+            // Cancela qualquer busca anterior ainda pendente — nunca duas ao mesmo tempo,
+            // e evita que uma resposta antiga e lenta sobrescreva uma busca mais nova.
+            if (searchAbortController) searchAbortController.abort();
+            const controller = new AbortController();
+            searchAbortController = controller;
+            let timedOut = false;
+            const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, 6000);
+
+            searchStatusEl.textContent = "Buscando...";
+            searchStatusEl.style.color = "";
+
+            // Prioriza resultados na região de Campina Grande/Massaranduba (viewbox
+            // com bounded=0 é só uma preferência, não restringe o resultado a essa área).
+            const params = new URLSearchParams({
+                q: term,
+                format: 'json',
+                limit: '5',
+                addressdetails: '1',
+                'accept-language': 'pt-BR',
+                countrycodes: 'br',
+                viewbox: '-36.05,-7.05,-35.65,-7.35',
+                bounded: '0'
+            });
+
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+                    signal: controller.signal
+                });
+                if (!res.ok) throw new Error("Falha na busca (status " + res.status + ")");
+                const data = await res.json();
+                renderSearchResults(data, term);
+            } catch (e) {
+                if (e.name === 'AbortError') {
+                    if (timedOut) {
+                        searchStatusEl.textContent = "A busca demorou demais. Tente novamente ou digite as coordenadas manualmente.";
+                        searchStatusEl.style.color = "#c0392b";
+                    }
+                    // se não foi timeout, foi apenas substituída por uma busca mais nova — silencioso
+                    return;
+                }
+                console.warn("Erro na busca Nominatim:", e.message);
+                searchStatusEl.textContent = "Não foi possível buscar agora. Você pode digitar as coordenadas manualmente abaixo.";
+                searchStatusEl.style.color = "#c0392b";
+                closeSearchResults(false);
+            } finally {
+                clearTimeout(timeout);
+            }
+        }
+
+        function renderSearchResults(results, term) {
+            searchResultsData = results;
+            searchActiveIndex = -1;
+            searchResultsEl.innerHTML = '';
+
+            if (!results.length) {
+                searchStatusEl.textContent = `Nenhum resultado para "${term}". Tente outro nome ou digite as coordenadas manualmente abaixo.`;
+                searchStatusEl.style.color = "";
+                searchResultsEl.hidden = true;
+                searchInput.setAttribute('aria-expanded', 'false');
+                return;
+            }
+
+            results.forEach((r, i) => {
+                const li = document.createElement('li');
+                li.id = `search-result-${i}`;
+                li.setAttribute('role', 'option');
+                li.setAttribute('aria-selected', 'false');
+                li.textContent = r.display_name;
+                li.addEventListener('mousedown', (e) => {
+                    e.preventDefault(); // evita que o blur feche a lista antes do clique ser registrado
+                    selectSearchResult(i);
+                });
+                searchResultsEl.appendChild(li);
+            });
+
+            searchResultsEl.hidden = false;
+            searchInput.setAttribute('aria-expanded', 'true');
+            searchStatusEl.textContent = `${results.length} sugestão(ões) encontrada(s). Use as setas do teclado ou clique para escolher.`;
+            searchStatusEl.style.color = "";
+        }
+
+        function selectSearchResult(index) {
+            const r = searchResultsData[index];
+            if (!r) return;
+            document.getElementById('new-lat').value = parseFloat(r.lat).toFixed(6);
+            document.getElementById('new-lon').value = parseFloat(r.lon).toFixed(6);
+            if (!document.getElementById('new-name').value.trim()) {
+                document.getElementById('new-name').value = (r.display_name.split(',')[0] || '').trim();
+            }
+            searchInput.value = r.display_name;
+            searchStatusEl.textContent = "Coordenadas preenchidas automaticamente a partir da busca.";
+            searchStatusEl.style.color = "#27ae60";
+            closeSearchResults(false);
+        }
+
+        function closeSearchResults(resetStatus = true) {
+            searchResultsEl.hidden = true;
+            searchResultsEl.innerHTML = '';
+            searchInput.setAttribute('aria-expanded', 'false');
+            searchInput.setAttribute('aria-activedescendant', '');
+            searchActiveIndex = -1;
+            if (resetStatus) {
+                searchStatusEl.textContent = searchStatusDefaultText;
+                searchStatusEl.style.color = "";
+            }
+        }
+
         function addNewLocation() {
             const name = document.getElementById('new-name').value.trim();
             const lat = parseFloat(document.getElementById('new-lat').value);
@@ -497,7 +712,7 @@
             const desc = document.getElementById('new-desc').value.trim() || "Ponto adicionado pelo usuário.";
 
             if (!name || isNaN(lat) || isNaN(lon)) {
-                alert("Preencha nome, latitude e longitude corretamente.");
+                alert("Preencha nome, latitude e longitude corretamente (busque pelo nome ou digite manualmente).");
                 return;
             }
 
@@ -516,6 +731,12 @@
             document.getElementById('new-lat').value = "";
             document.getElementById('new-lon').value = "";
             document.getElementById('new-desc').value = "";
+            document.getElementById('new-island').value = "2.0";
+            document.getElementById('island-val').innerText = "2.0";
+            searchInput.value = "";
+            clearTimeout(searchDebounceTimer);
+            if (searchAbortController) searchAbortController.abort();
+            closeSearchResults();
 
             selectLocation(key);
         }
